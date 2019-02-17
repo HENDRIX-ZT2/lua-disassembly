@@ -78,14 +78,6 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		print( "\t"*indent + "else")
 		read_instr(instructions, i+1, indent+1, was_self, notagain)
 		print( "\t"*indent + "end")
-	
-	elif ins[0] == "newtable":
-		# A B C   R(A) := {} (size = B,C)
-		A,B,C = ins[1:]
-		var_A = registers[A]
-		print( "\t"*indent + f"local {var_A} = "+"{}")
-		#just continue with the next
-		read_instr(instructions, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "settable":
 		# A B C   R(A)[RK(B)] := RK(C)
@@ -249,14 +241,16 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		
 	elif ins[0] == "getglobal":
 		#A Bx R(A) := Gbl[Kst(Bx)]
-		A, B = ins[1:]
-		registers[A] = upvalues[B]
+		A, Bx = ins[1:]
+		registers[A] = globals[ constants[Bx] ]
+		print( "\t"*indent + f"{registers[A]} = {globals[ constants[Bx] ]}")
 		read_instr(instructions, i+1, indent, was_self, notagain)
-		
+	#page 6	
 	elif ins[0] == "setglobal":
-		#A Bx Gbl[Kst(Bx)] := R(A)
-		A,B = ins[1:]
-		upvalues[B] = registers[A]
+		#A Bx  Gbl[Kst(Bx)] := R(A)
+		A,Bx = ins[1:]
+		globals[ constants[Bx] ] = registers[A]
+		print( "\t"*indent + f"{globals[ constants[Bx] ]} = {registers[A]}")
 		read_instr(instructions, i+1, indent, was_self, notagain)
 		
 	###########################################################
@@ -273,6 +267,15 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 	###########################################################
 	# 13  Table Creation
 	###########################################################
+	
+	elif ins[0] == "newtable":
+		# A B C   R(A) := {} (size = B,C)
+		A,B,C = ins[1:]
+		var_A = registers[A]
+		print( "\t"*indent + f"local {var_A} = "+"{}")
+		#just continue with the next
+		read_instr(instructions, i+1, indent, was_self, notagain)
+		
 	elif ins[0] == "setlist":
 		#A Bx     R(A)[Bx-Bx%FPF+i] := R(A+i),
 		# where 1 <= i <= Bx%FPF+1
@@ -299,11 +302,15 @@ f = open(file, "r")
 
 for line in f.readlines():
 	if line.startswith(".function"):
-		function = line
+		# vararg function flag, true if non-zero
+		# maximum stack size (number of registers used)
+		num_upvalues, num_params, vararg_flag, max_stack_size = [int(j) for j in line[10:].split()]
+		
 		locals = []
 		constants = []
 		instructions = []
 		registers = []
+		globals = {}
 	
 	if line.startswith(".local"):
 		locals.append( clear_var(line[8:]) )
@@ -315,14 +322,15 @@ for line in f.readlines():
 		instructions.append( clear_ins(line)  )
 		
 	if line.startswith("; end of function"):
-		registers = [f"reg{i}" for i in range(255)]
+		registers = [f"reg{i}" for i in range(max_stack_size)]
 		registers[0:len(locals)] = locals
-		upvalues = [f"upval{i}" for i in range(255)]
+		upvalues = [f"upval{i}" for i in range(num_upvalues)]
 
 		moved = list(registers)
-		print(function)
+		print(num_upvalues, num_params, vararg_flag, max_stack_size)
 		# print(locals)
 		# print(constants)
 		# print(instructions)
 		read_instr(instructions, 0)
 		# print(registers)
+		# print(upvalues)
