@@ -57,7 +57,7 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 	# 6  Loading Constants
 	###########################################################
 		
-	elif ins[0] == "move":
+	if ins[0] == "move":
 		#A B     R(A) := R(B)
 		A, B = ins[1:]
 		registers[A] = registers[B]
@@ -67,6 +67,15 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		A,B = ins[1:]
 		registers[A] = constants[B]
 		read_instr(instructions, i+1, indent, was_self, notagain)
+		
+	elif ins[0] == "loadbool":
+		#A B C   R(A) := (Bool)B; if (C) PC++
+		A, B, C = ins[1:]
+		registers[A] = bool(B)
+		if C:
+			read_instr(instructions, i+2, indent, was_self, notagain)
+		else:
+			read_instr(instructions, i+1, indent, was_self, notagain)
 	
 	###########################################################
 	# 7  Upvalues and Globals
@@ -216,7 +225,7 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		# A determines start of returns
 		# B determines amount of returns
 		#B == 1 means no return values
-		params = ", ".join([registers[j] for j in range(A, A+B-1)])
+		params = ", ".join([str(registers[j]) for j in range(A, A+B-1)])
 		print( "\t"*indent + f"return "+ params)
 		
 	elif ins[0] == "self":
@@ -239,7 +248,7 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 	###########################################################
 	# 11  Relational and Logic Instructions
 	###########################################################
-	if ins[0] in ("eq", "lt", "le"):
+	elif ins[0] in ("eq", "lt", "le"):
 		# if ((RK(B) == RK(C)) ~= A) then pc++
 		A,B,C = ins[1:]
 		#set the comparison operator
