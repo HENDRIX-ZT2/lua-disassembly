@@ -52,33 +52,62 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		return
 	ins = instructions[i]
 	# print(ins[0])
-	if ins[0] in ("eq", "lt", "le"):
-		# if ((RK(B) == RK(C)) ~= A) then pc++
-		A,B,C = ins[1:]
-		#set the comparison operator
-		if ins[0] == "eq":
-			if A == 1:
-				op = "~="
-			else:
-				op = "=="
-		elif ins[0] == "lt":
-			if A == 1:
-				op = ">"
-			else:
-				op = "<"
-		elif ins[0] == "le":
-			if A == 1:
-				op = ">="
-			else:
-				op = "<="
-		print( "\t"*indent + f"if {RK(B)} {op} {RK(C)} then" )
-		#true path
-		read_instr(instructions, i+2, indent+1, was_self, notagain)
-		#false path
-		print( "\t"*indent + "else")
-		read_instr(instructions, i+1, indent+1, was_self, notagain)
-		print( "\t"*indent + "end")
 		
+	###########################################################
+	# 6  Loading Constants
+	###########################################################
+		
+	elif ins[0] == "move":
+		#A B     R(A) := R(B)
+		A, B = ins[1:]
+		registers[A] = registers[B]
+		read_instr(instructions, i+1, indent, was_self, notagain)
+	
+	elif ins[0] == "loadk":
+		A,B = ins[1:]
+		registers[A] = constants[B]
+		read_instr(instructions, i+1, indent, was_self, notagain)
+	
+	###########################################################
+	# 7  Upvalues and Globals
+	###########################################################
+	
+	#upvalues only store their name
+	elif ins[0] == "getupval":
+		#A B   R(A) := UpValue[B]
+		A, B = ins[1:]
+		registers[A] = upvalues[B]
+		read_instr(instructions, i+1, indent, was_self, notagain)
+		
+	elif ins[0] == "setupval":
+		#A B UpValue[B] := R(A)
+		A,B = ins[1:]
+		upvalues[B] = registers[A]
+		# print("setupval",upvalues[B])
+		read_instr(instructions, i+1, indent, was_self, notagain)
+		
+	elif ins[0] == "getglobal":
+		#A Bx R(A) := Gbl[Kst(Bx)]
+		A, Bx = ins[1:]
+		try:
+			registers[A] = globals[ constants[Bx] ]
+		except:
+			print("global has not been defined")
+			registers[A] = 0
+			globals[ constants[Bx] ] = 0
+		print( "\t"*indent + f"{registers[A]} = {globals[ constants[Bx] ]}")
+		read_instr(instructions, i+1, indent, was_self, notagain)
+	#page 6	
+	elif ins[0] == "setglobal":
+		#A Bx  Gbl[Kst(Bx)] := R(A)
+		A,Bx = ins[1:]
+		globals[ constants[Bx] ] = registers[A]
+		print( "\t"*indent + f"{globals[ constants[Bx] ]} = {registers[A]}")
+		read_instr(instructions, i+1, indent, was_self, notagain)
+		
+	###########################################################
+	# 8  Table Instructions
+	###########################################################
 	elif ins[0] == "settable":
 		# A B C   R(A)[RK(B)] := RK(C)
 		A,B,C = ins[1:]
@@ -107,85 +136,10 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 			print( "\t"*indent + f"local {var_A} = {var_B}.{var_C}" )
 		#just continue with the next
 		read_instr(instructions, i+1, indent, was_self, notagain)
-
-	elif ins[0] == "jmp":
-		# sBx PC += sBx
-		read_instr(instructions, i+ins[1]+1, indent, was_self, notagain)
-		
-	elif ins[0] == "self":
-		#A B C   R(A+1) := R(B); R(A) := R(B)[RK(C)]
-		A,B,C = ins[1:]
-		# A determines start of params & returns
-		# B determines amount of parameters
-		# C determines amount of returns
-		
-		var_A = RK(A)
-		var_B = RK(B)
-		var_C = RK(C)
-		registers[A+1] = var_C
-		# registers[A] = var_B+":"+var_C
-		registers[A] = registers[B]
-		# registers[A] = RK(C)
-		# print( "\t"*indent + f"local {var_A} = {var_B}:{var_C}("")")
-		read_instr(instructions, i+1, indent, True, notagain)
-		
-	elif ins[0] == "call":
-		#A B C   R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
-		A,B,C = ins[1:]
-		# A determines start of params & returns
-		# B determines amount of parameters: parameters = B-1
-		# C determines amount of returns
-		
-		#get parameters from the registers after A
-		if not was_self:
-			params = ", ".join([str(registers[j]) for j in range(A+1, A+B)])
-			if C == 1:
-				print( "\t"*indent + f"{registers[A]}("+ params+")")
-			else:
-				returns = ", ".join([str(registers[j]) for j in range(A, A+C-1)])
-				print( "\t"*indent + f"local {returns} = {registers[A]}("+ params+")")
-		else:
-			params = ", ".join([str(registers[j]) for j in range(A+2, A+B)])
-			if C == 1:
-				print( "\t"*indent + f"{registers[A]}:{registers[A+1]}("+ params+")")
-			else:
-				returns = ", ".join([str(registers[j]) for j in range(A, A+C-1)])
-				print( "\t"*indent + f"local {returns} = {registers[A]}:{registers[A+1]}("+ params+")")
-			
-		read_instr(instructions, i+1, indent, False, notagain)
-	
-	elif ins[0] == "return":
-		#A B   return R(A), ... ,R(A+B-2)
-		A,B = ins[1:]
-		# A determines start of returns
-		# B determines amount of returns
-		#B == 1 means no return values
-		params = ", ".join([registers[j] for j in range(A, A+B-1)])
-		print( "\t"*indent + f"return "+ params)
-		
-	elif ins[0] == "getglobal":
-		A,B = ins[1:]
-		registers[A] = constants[B]
-		read_instr(instructions, i+1, indent, was_self, notagain)
-		
-	# elif ins[0] == "setglobal":
-		# A,B = ins[1:]
-		# registers[A] = constants[B]
-		# read_instr(instructions, i+1, indent, was_self, notagain)
-	
-	elif ins[0] == "loadk":
-		A,B = ins[1:]
-		registers[A] = constants[B]
-		read_instr(instructions, i+1, indent, was_self, notagain)
-		
-	elif ins[0] == "move":
-		A, B = ins[1:]
-		registers[A] = registers[B]
-		read_instr(instructions, i+1, indent, was_self, notagain)
 	
 	
 	###########################################################
-	# Arithmetic and String Instructions
+	# 9 Arithmetic and String Instructions
 	###########################################################
 	# note: we can't perform these additions because data may be vars or constants
 	elif ins[0] == "add":
@@ -223,35 +177,94 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		print( "\t"*indent + f"{registers[A]} = {RK(B)} ^ {RK(C)}")
 		read_instr(instructions, i+1, indent, was_self, notagain)
 		
-		
 	###########################################################
-	# 7  Upvalues and Globals
+	# 10  Jumps and Calls
 	###########################################################
-	elif ins[0] == "getupval":
-		#A B   R(A) := UpValue[B]
-		A, B = ins[1:]
-		registers[A] = upvalues[B]
-		read_instr(instructions, i+1, indent, was_self, notagain)
+	
+	elif ins[0] == "jmp":
+		# sBx PC += sBx
+		read_instr(instructions, i+ins[1]+1, indent, was_self, notagain)
 		
-	elif ins[0] == "setupval":
-		#A B UpValue[B] := R(A)
+	elif ins[0] == "call":
+		#A B C   R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
+		A,B,C = ins[1:]
+		# A determines start of params & returns
+		# B determines amount of parameters: parameters = B-1
+		# C determines amount of returns
+		
+		#get parameters from the registers after A
+		if not was_self:
+			params = ", ".join([str(registers[j]) for j in range(A+1, A+B)])
+			if C == 1:
+				print( "\t"*indent + f"{registers[A]}("+ params+")")
+			else:
+				returns = ", ".join([str(registers[j]) for j in range(A, A+C-1)])
+				print( "\t"*indent + f"local {returns} = {registers[A]}("+ params+")")
+		else:
+			params = ", ".join([str(registers[j]) for j in range(A+2, A+B)])
+			if C == 1:
+				print( "\t"*indent + f"{registers[A]}:{registers[A+1]}("+ params+")")
+			else:
+				returns = ", ".join([str(registers[j]) for j in range(A, A+C-1)])
+				print( "\t"*indent + f"local {returns} = {registers[A]}:{registers[A+1]}("+ params+")")
+			
+		read_instr(instructions, i+1, indent, False, notagain)
+	
+	elif ins[0] == "return":
+		#A B   return R(A), ... ,R(A+B-2)
 		A,B = ins[1:]
-		upvalues[B] = registers[A]
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		# A determines start of returns
+		# B determines amount of returns
+		#B == 1 means no return values
+		params = ", ".join([registers[j] for j in range(A, A+B-1)])
+		print( "\t"*indent + f"return "+ params)
 		
-	elif ins[0] == "getglobal":
-		#A Bx R(A) := Gbl[Kst(Bx)]
-		A, Bx = ins[1:]
-		registers[A] = globals[ constants[Bx] ]
-		print( "\t"*indent + f"{registers[A]} = {globals[ constants[Bx] ]}")
-		read_instr(instructions, i+1, indent, was_self, notagain)
-	#page 6	
-	elif ins[0] == "setglobal":
-		#A Bx  Gbl[Kst(Bx)] := R(A)
-		A,Bx = ins[1:]
-		globals[ constants[Bx] ] = registers[A]
-		print( "\t"*indent + f"{globals[ constants[Bx] ]} = {registers[A]}")
-		read_instr(instructions, i+1, indent, was_self, notagain)
+	elif ins[0] == "self":
+		#A B C   R(A+1) := R(B); R(A) := R(B)[RK(C)]
+		A,B,C = ins[1:]
+		# A determines start of params & returns
+		# B determines amount of parameters
+		# C determines amount of returns
+		
+		var_A = RK(A)
+		var_B = RK(B)
+		var_C = RK(C)
+		registers[A+1] = var_C
+		# registers[A] = var_B+":"+var_C
+		registers[A] = registers[B]
+		# registers[A] = RK(C)
+		# print( "\t"*indent + f"local {var_A} = {var_B}:{var_C}("")")
+		read_instr(instructions, i+1, indent, True, notagain)
+		
+	###########################################################
+	# 11  Relational and Logic Instructions
+	###########################################################
+	if ins[0] in ("eq", "lt", "le"):
+		# if ((RK(B) == RK(C)) ~= A) then pc++
+		A,B,C = ins[1:]
+		#set the comparison operator
+		if ins[0] == "eq":
+			if A == 1:
+				op = "~="
+			else:
+				op = "=="
+		elif ins[0] == "lt":
+			if A == 1:
+				op = ">"
+			else:
+				op = "<"
+		elif ins[0] == "le":
+			if A == 1:
+				op = ">="
+			else:
+				op = "<="
+		print( "\t"*indent + f"if {RK(B)} {op} {RK(C)} then" )
+		#true path
+		read_instr(instructions, i+2, indent+1, was_self, notagain)
+		#false path
+		print( "\t"*indent + "else")
+		read_instr(instructions, i+1, indent+1, was_self, notagain)
+		print( "\t"*indent + "end")
 		
 	###########################################################
 	# 12  Loop Instructions
