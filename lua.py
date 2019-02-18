@@ -186,6 +186,16 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		print( "\t"*indent + f"{registers[A]} = {RK(B)} ^ {RK(C)}")
 		read_instr(instructions, i+1, indent, was_self, notagain)
 		
+	elif ins[0] == "concat":
+		#A B C R(A) := R(B).. ... ..R(C)
+		A,B,C = ins[1:]
+		#add lua concatenation operator between all operands
+		out = "..".join([str(registers[j]) for j in range(B, C+1)])
+		#store
+		registers[A] = out
+		# print( "\t"*indent + f"...concatenated {out}")
+		read_instr(instructions, i+1, indent, was_self, notagain)
+		
 	###########################################################
 	# 10  Jumps and Calls
 	###########################################################
@@ -274,7 +284,20 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		print( "\t"*indent + "else")
 		read_instr(instructions, i+1, indent+1, was_self, notagain)
 		print( "\t"*indent + "end")
-		
+	
+	elif ins[0] == "test":
+		# A B C   if (R(B) <=> C) then R(A) := R(B) else pc++ 
+		A,B,C = ins[1:]
+		#this needs more work
+		registers[A] = registers[B]
+		print( "\t"*indent + f"if ({registers[B]}) then" )
+		#true path
+		read_instr(instructions, i+2, indent+1, was_self, notagain)
+		#false path
+		print( "\t"*indent + "else")
+		read_instr(instructions, i+1, indent+1, was_self, notagain)
+		print( "\t"*indent + "end")
+	
 	###########################################################
 	# 12  Loop Instructions
 	###########################################################
@@ -317,42 +340,87 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		print("\t"*indent + "NOT IMPLEMENTED "+ins[0])
 	
 
+def find_all(a_str, sub):
+    start = 0
+    while True:
+        start = a_str.find(sub, start)
+        if start == -1: return
+        yield start
+        start += len(sub)
+		
 file = "compiled2.asm"
 file = "jgb.lua"
 file = sys.argv[1]
 f = open(file, "r")
+text = f.read()
+#get locations of functions' starts and ends
+starts = list(find_all(text, ".function"))
+ends = list(find_all(text, "; end of function"))
 
-for line in f.readlines():
-	if line.startswith(".function"):
-		# vararg function flag, true if non-zero
-		# maximum stack size (number of registers used)
-		num_upvalues, num_params, vararg_flag, max_stack_size = [int(j) for j in line[10:].split()]
-		
-		locals = []
-		constants = []
-		instructions = []
-		registers = []
-		globals = {}
+#resolve
+functions = []
+for start in reversed(starts):
+	diffs = [end-start for end in ends if end > start]
+	end = start+min(diffs)
+	ends.remove(end)
+	functions.append( (start, end) )
+functions.reverse()
+
+#assign levels
+level = 1
+for i, (start, end) in enumerate(functions):
+	print(functions[i])
+	if i > 0:
+		if start < functions[i-1][1]:
+			level+=1
+			print("this function is nested",level)
+		else:
+			print("this function ends before next starts", level)
+	else:
+		print("toplevel func")
 	
-	if line.startswith(".local"):
-		locals.append( clear_var(line[8:]) )
-		
-	if line.startswith(".const"):
-		constants.append( clear_var(line[8:]) )
-		
-	if line.startswith("["):
-		instructions.append( clear_ins(line)  )
-		
-	if line.startswith("; end of function"):
-		registers = [f"reg{i}" for i in range(max_stack_size)]
-		registers[0:len(locals)] = locals
-		upvalues = [f"upval{i}" for i in range(num_upvalues)]
+print(functions)
+start, end = functions[0]
 
-		moved = list(registers)
-		print(num_upvalues, num_params, vararg_flag, max_stack_size)
-		# print(locals)
-		# print(constants)
-		# print(instructions)
+start1, end1 = functions[1]
+start2, end2 = functions[-1]
+funcs = [ text[start:start1]+text[end2:end], ]
+for start, end in functions[1:]:
+	funcs.append( text[start:end] )
+for func in funcs:
+	for line in func.splitlines():
+		if line.startswith(".function"):
+			# vararg function flag, true if non-zero
+			# maximum stack size (number of registers used)
+			num_upvalues, num_params, vararg_flag, max_stack_size = [int(j) for j in line[10:].split()]
+			
+			locals = []
+			constants = []
+			instructions = []
+			registers = []
+			globals = {}
+		
+		if line.startswith(".local"):
+			locals.append( clear_var(line[8:]) )
+			
+		if line.startswith(".const"):
+			constants.append( clear_var(line[8:]) )
+			
+		if line.startswith("["):
+			instructions.append( clear_ins(line)  )
+			
+		# if line.startswith("; end of function"):
+	registers = [f"reg{i}" for i in range(max_stack_size)]
+	registers[0:len(locals)] = locals
+	upvalues = [f"upval{i}" for i in range(num_upvalues)]
+
+	moved = list(registers)
+	print(num_upvalues, num_params, vararg_flag, max_stack_size)
+	# print(locals)
+	# print(constants)
+	# print(instructions)
+	if instructions:
 		read_instr(instructions, 0)
-		# print(registers)
-		# print(upvalues)
+	instructions = []
+	# print(registers)
+	# print(upvalues)
