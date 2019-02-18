@@ -49,7 +49,7 @@ def read_instr(closure, i, indent=0, was_self=False, notagain=None):
 			return closure.constants[n-250]
 	instructions = closure.instructions
 	if i == notagain:
-		print("info: terminated loop construct")
+		# print("info: terminated loop construct")
 		return
 	ins = instructions[i]
 	# print(ins[0])
@@ -101,14 +101,14 @@ def read_instr(closure, i, indent=0, was_self=False, notagain=None):
 		A, Bx = ins[1:]
 		globals[ closure.constants[Bx] ] = closure.constants[Bx]
 		closure.registers[A] = globals[ closure.constants[Bx] ]
-		print( "\t"*indent + f"{closure.registers[A]} = {globals[ closure.constants[Bx] ]}")
+		# print( "\t"*indent + f"{closure.registers[A]} = {globals[ closure.constants[Bx] ]}")
 		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "setglobal":
 		#A Bx  Gbl[Kst(Bx)] := R(A)
 		A,Bx = ins[1:]
 		closure.registers[A] = closure.constants[Bx] 
-		print( "\t"*indent + f"{ closure.constants[Bx] } = {closure.registers[A]}")
+		# print( "\t"*indent + f"{ closure.constants[Bx] } = {closure.registers[A]}")
 		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	###########################################################
@@ -340,11 +340,13 @@ def read_instr(closure, i, indent=0, was_self=False, notagain=None):
 		#A Bx	 R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))
 		A, Bx = ins[1:]
 		
+		read_instr(closure, i+1, indent, was_self, i+2)
+		# todo: get registers[A] _after_ the next instruction
 		print( )
 		print( "\t"*indent + f"function {closure.registers[A]}()")
 		read_instr(closures[Bx+1], 0, indent+1, )
 		print( "\t"*indent + f"end")
-		read_instr(closure, i+1, indent, was_self, notagain)
+		read_instr(closure, i+2, indent, was_self, notagain)
 		
 	else:
 		print("\t"*indent + "NOT IMPLEMENTED "+ins[0])
