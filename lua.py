@@ -27,14 +27,6 @@ def clear_var(l):
 			pass
 	return l
 
-def RK(n):
-	#RK(B) Register B or a constant index
-	#RK(C) Register C or a constant index
-	# RK may be registers or constants
-	if n < 250:
-		return registers[n]
-	else:
-		return constants[n-250]
 
 # def getv(n):
 	# try:
@@ -46,7 +38,16 @@ def RK(n):
 	# except:
 		# return registers[n]
 		
-def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
+def read_instr(closure, i, indent=0, was_self=False, notagain=None):
+	def RK(n):
+		#RK(B) Register B or a constant index
+		#RK(C) Register C or a constant index
+		# RK may be registers or constants
+		if n < 250:
+			return closure.registers[n]
+		else:
+			return closure.constants[n-250]
+	instructions = closure.instructions
 	if i == notagain:
 		print("info: terminated loop construct")
 		return
@@ -54,73 +55,69 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 	# print(ins[0])
 		
 	###########################################################
-	# 6  Loading Constants
+	# 6	 Loading Constants
 	###########################################################
 		
 	if ins[0] == "move":
-		#A B     R(A) := R(B)
+		#A B	 R(A) := R(B)
 		A, B = ins[1:]
-		registers[A] = registers[B]
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		closure.registers[A] = closure.registers[B]
+		read_instr(closure, i+1, indent, was_self, notagain)
 	
 	elif ins[0] == "loadk":
 		A,B = ins[1:]
-		registers[A] = constants[B]
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		closure.registers[A] = closure.constants[B]
+		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "loadbool":
-		#A B C   R(A) := (Bool)B; if (C) PC++
+		#A B C	 R(A) := (Bool)B; if (C) PC++
 		A, B, C = ins[1:]
-		registers[A] = bool(B)
+		closure.registers[A] = bool(B)
 		if C:
-			read_instr(instructions, i+2, indent, was_self, notagain)
+			read_instr(closure, i+2, indent, was_self, notagain)
 		else:
-			read_instr(instructions, i+1, indent, was_self, notagain)
+			read_instr(closure, i+1, indent, was_self, notagain)
 	
 	###########################################################
-	# 7  Upvalues and Globals
+	# 7	 Upvalues and Globals
 	###########################################################
 	
 	#upvalues only store their name
 	elif ins[0] == "getupval":
 		#A B   R(A) := UpValue[B]
 		A, B = ins[1:]
-		registers[A] = upvalues[B]
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		closure.registers[A] = upvalues[B]
+		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "setupval":
 		#A B UpValue[B] := R(A)
 		A,B = ins[1:]
-		upvalues[B] = registers[A]
+		upvalues[B] = closure.registers[A]
 		# print("setupval",upvalues[B])
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "getglobal":
 		#A Bx R(A) := Gbl[Kst(Bx)]
 		A, Bx = ins[1:]
-		try:
-			registers[A] = globals[ constants[Bx] ]
-		except:
-			print("global has not been defined")
-			registers[A] = 0
-			globals[ constants[Bx] ] = 0
-		print( "\t"*indent + f"{registers[A]} = {globals[ constants[Bx] ]}")
-		read_instr(instructions, i+1, indent, was_self, notagain)
-	#page 6	
+		globals[ closure.constants[Bx] ] = closure.constants[Bx]
+		closure.registers[A] = globals[ closure.constants[Bx] ]
+		print( "\t"*indent + f"{closure.registers[A]} = {globals[ closure.constants[Bx] ]}")
+		read_instr(closure, i+1, indent, was_self, notagain)
+		
 	elif ins[0] == "setglobal":
 		#A Bx  Gbl[Kst(Bx)] := R(A)
 		A,Bx = ins[1:]
-		globals[ constants[Bx] ] = registers[A]
-		print( "\t"*indent + f"{globals[ constants[Bx] ]} = {registers[A]}")
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		closure.registers[A] = closure.constants[Bx] 
+		print( "\t"*indent + f"{ closure.constants[Bx] } = {closure.registers[A]}")
+		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	###########################################################
-	# 8  Table Instructions
+	# 8	 Table Instructions
 	###########################################################
 	elif ins[0] == "settable":
-		# A B C   R(A)[RK(B)] := RK(C)
+		# A B C	  R(A)[RK(B)] := RK(C)
 		A,B,C = ins[1:]
-		var_A = registers[A]
+		var_A = closure.registers[A]
 		var_B = RK(B)
 		var_C = RK(C)
 		# int indexing
@@ -129,14 +126,14 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		else:
 			print( "\t"*indent + f"{var_A}.{var_B} = {var_C}" )
 		#just continue with the next
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "gettable":
 		
 		# R(A) := R(B)[RK(C)]
 		A,B,C = ins[1:]
-		var_A = registers[A]
-		var_B = registers[B]
+		var_A = closure.registers[A]
+		var_B = closure.registers[B]
 		var_C = RK(C)
 		# int indexing
 		if type(var_C) == type(0):
@@ -144,7 +141,7 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		else:
 			print( "\t"*indent + f"local {var_A} = {var_B}.{var_C}" )
 		#just continue with the next
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		read_instr(closure, i+1, indent, was_self, notagain)
 	
 	
 	###########################################################
@@ -152,49 +149,49 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 	###########################################################
 	# note: we can't perform these additions because data may be vars or constants
 	elif ins[0] == "add":
-		#A B C  R(A) := RK(B) + RK(C)
+		#A B C	R(A) := RK(B) + RK(C)
 		A,B,C = ins[1:]
-		registers[A] = RK(B)# + RK(C)
-		print( "\t"*indent + f"{registers[A]} = {RK(B)} + {RK(C)}")
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		# closure.registers[A] = RK(B)# + RK(C)
+		print( "\t"*indent + f"{closure.registers[A]} = {RK(B)} + {RK(C)}")
+		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "sub":
-		#A B C  R(A) := RK(B) - RK(C)
+		#A B C	R(A) := RK(B) - RK(C)
 		A,B,C = ins[1:]
-		registers[A] = RK(B)# - RK(C)
-		print( "\t"*indent + f"{registers[A]} = {RK(B)} - {RK(C)}")
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		# closure.registers[A] = RK(B)# - RK(C)
+		print( "\t"*indent + f"{closure.registers[A]} = {RK(B)} - {RK(C)}")
+		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "mul":
-		#A B C  R(A) := RK(B) * RK(C)
+		#A B C	R(A) := RK(B) * RK(C)
 		A,B,C = ins[1:]
-		registers[A] = RK(B)# * RK(C)
-		print( "\t"*indent + f"{registers[A]} = {RK(B)} * {RK(C)}")
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		# closure.registers[A] = RK(B)# * RK(C)
+		print( "\t"*indent + f"{closure.registers[A]} = {RK(B)} * {RK(C)}")
+		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "div":
-		#A B C  R(A) := RK(B) / RK(C)
+		#A B C	R(A) := RK(B) / RK(C)
 		A,B,C = ins[1:]
-		registers[A] = RK(B)# / RK(C)
-		print( "\t"*indent + f"{registers[A]} = {RK(B)} / {RK(C)}")
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		# closure.registers[A] = RK(B)# / RK(C)
+		print( "\t"*indent + f"{closure.registers[A]} = {RK(B)} / {RK(C)}")
+		read_instr(closure, i+1, indent, was_self, notagain)
 	
 	elif ins[0] == "pow":
-		#A B C  R(A) := RK(B) ^ RK(C)
+		#A B C	R(A) := RK(B) ^ RK(C)
 		A,B,C = ins[1:]
-		registers[A] = RK(B)# ** RK(C)
-		print( "\t"*indent + f"{registers[A]} = {RK(B)} ^ {RK(C)}")
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		# closure.registers[A] = RK(B)# ** RK(C)
+		print( "\t"*indent + f"{closure.registers[A]} = {RK(B)} ^ {RK(C)}")
+		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "concat":
 		#A B C R(A) := R(B).. ... ..R(C)
 		A,B,C = ins[1:]
 		#add lua concatenation operator between all operands
-		out = "..".join([str(registers[j]) for j in range(B, C+1)])
+		out = "..".join([str(closure.registers[j]) for j in range(B, C+1)])
 		#store
-		registers[A] = out
+		closure.registers[A] = out
 		# print( "\t"*indent + f"...concatenated {out}")
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	###########################################################
 	# 10  Jumps and Calls
@@ -202,10 +199,10 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 	
 	elif ins[0] == "jmp":
 		# sBx PC += sBx
-		read_instr(instructions, i+ins[1]+1, indent, was_self, notagain)
+		read_instr(closure, i+ins[1]+1, indent, was_self, notagain)
 		
 	elif ins[0] == "call":
-		#A B C   R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
+		#A B C	 R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))
 		A,B,C = ins[1:]
 		# A determines start of params & returns
 		# B determines amount of parameters: parameters = B-1
@@ -213,21 +210,21 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		
 		#get parameters from the registers after A
 		if not was_self:
-			params = ", ".join([str(registers[j]) for j in range(A+1, A+B)])
+			params = ", ".join([str(closure.registers[j]) for j in range(A+1, A+B)])
 			if C == 1:
-				print( "\t"*indent + f"{registers[A]}("+ params+")")
+				print( "\t"*indent + f"{closure.registers[A]}("+ params+")")
 			else:
-				returns = ", ".join([str(registers[j]) for j in range(A, A+C-1)])
-				print( "\t"*indent + f"local {returns} = {registers[A]}("+ params+")")
+				returns = ", ".join([str(closure.registers[j]) for j in range(A, A+C-1)])
+				print( "\t"*indent + f"local {returns} = {closure.registers[A]}("+ params+")")
 		else:
-			params = ", ".join([str(registers[j]) for j in range(A+2, A+B)])
+			params = ", ".join([str(closure.registers[j]) for j in range(A+2, A+B)])
 			if C == 1:
-				print( "\t"*indent + f"{registers[A]}:{registers[A+1]}("+ params+")")
+				print( "\t"*indent + f"{closure.registers[A]}:{closure.registers[A+1]}("+ params+")")
 			else:
-				returns = ", ".join([str(registers[j]) for j in range(A, A+C-1)])
-				print( "\t"*indent + f"local {returns} = {registers[A]}:{registers[A+1]}("+ params+")")
+				returns = ", ".join([str(closure.registers[j]) for j in range(A, A+C-1)])
+				print( "\t"*indent + f"local {returns} = {closure.registers[A]}:{closure.registers[A+1]}("+ params+")")
 			
-		read_instr(instructions, i+1, indent, False, notagain)
+		read_instr(closure, i+1, indent, False, notagain)
 	
 	elif ins[0] == "return":
 		#A B   return R(A), ... ,R(A+B-2)
@@ -235,11 +232,11 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		# A determines start of returns
 		# B determines amount of returns
 		#B == 1 means no return values
-		params = ", ".join([str(registers[j]) for j in range(A, A+B-1)])
+		params = ", ".join([str(closure.registers[j]) for j in range(A, A+B-1)])
 		print( "\t"*indent + f"return "+ params)
 		
 	elif ins[0] == "self":
-		#A B C   R(A+1) := R(B); R(A) := R(B)[RK(C)]
+		#A B C	 R(A+1) := R(B); R(A) := R(B)[RK(C)]
 		A,B,C = ins[1:]
 		# A determines start of params & returns
 		# B determines amount of parameters
@@ -248,12 +245,12 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 		var_A = RK(A)
 		var_B = RK(B)
 		var_C = RK(C)
-		registers[A+1] = var_C
+		closure.registers[A+1] = var_C
 		# registers[A] = var_B+":"+var_C
-		registers[A] = registers[B]
+		closure.registers[A] = closure.registers[B]
 		# registers[A] = RK(C)
 		# print( "\t"*indent + f"local {var_A} = {var_B}:{var_C}("")")
-		read_instr(instructions, i+1, indent, True, notagain)
+		read_instr(closure, i+1, indent, True, notagain)
 		
 	###########################################################
 	# 11  Relational and Logic Instructions
@@ -279,34 +276,34 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 				op = "<="
 		print( "\t"*indent + f"if {RK(B)} {op} {RK(C)} then" )
 		#true path
-		read_instr(instructions, i+2, indent+1, was_self, notagain)
+		read_instr(closure, i+2, indent+1, was_self, notagain)
 		#false path
 		print( "\t"*indent + "else")
-		read_instr(instructions, i+1, indent+1, was_self, notagain)
+		read_instr(closure, i+1, indent+1, was_self, notagain)
 		print( "\t"*indent + "end")
 	
 	elif ins[0] == "test":
-		# A B C   if (R(B) <=> C) then R(A) := R(B) else pc++ 
+		# A B C	  if (R(B) <=> C) then R(A) := R(B) else pc++ 
 		A,B,C = ins[1:]
 		#this needs more work
-		registers[A] = registers[B]
-		print( "\t"*indent + f"if ({registers[B]}) then" )
+		closure.registers[A] = closure.registers[B]
+		print( "\t"*indent + f"if ({closure.registers[B]}) then" )
 		#true path
-		read_instr(instructions, i+2, indent+1, was_self, notagain)
+		read_instr(closure, i+2, indent+1, was_self, notagain)
 		#false path
 		print( "\t"*indent + "else")
-		read_instr(instructions, i+1, indent+1, was_self, notagain)
+		read_instr(closure, i+1, indent+1, was_self, notagain)
 		print( "\t"*indent + "end")
 	
 	###########################################################
 	# 12  Loop Instructions
 	###########################################################
 	elif ins[0] == "forloop":
-		#A sBx    R(A)+=R(A+2)
+		#A sBx	  R(A)+=R(A+2)
 		#if R(A) <?= R(A+1) then PC+= sBx
 		A, sBx = ins[1:]
-		print( "\t"*indent + f"for {registers[A]} = {A} do")
-		read_instr(instructions, i+ins[2]+1, indent+1, was_self, i)
+		print( "\t"*indent + f"for {closure.registers[A]} = {A} do")
+		read_instr(closure, i+ins[2]+1, indent+1, was_self, i)
 		print( "\t"*indent + f"end")
 	
 	###########################################################
@@ -314,39 +311,52 @@ def read_instr(instructions, i, indent=0, was_self=False, notagain=None):
 	###########################################################
 	
 	elif ins[0] == "newtable":
-		# A B C   R(A) := {} (size = B,C)
+		# A B C	  R(A) := {} (size = B,C)
 		A,B,C = ins[1:]
-		var_A = registers[A]
+		var_A = closure.registers[A]
 		print( "\t"*indent + f"local {var_A} = "+"{}")
 		#just continue with the next
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "setlist":
-		#A Bx     R(A)[Bx-Bx%FPF+i] := R(A+i),
+		#A Bx	  R(A)[Bx-Bx%FPF+i] := R(A+i),
 		# where 1 <= i <= Bx%FPF+1
 		A, Bx = ins[1:]
 		
 		#hardcoded in lua
 		FPF = 32
 		
-		input = ", ".join( [ registers[A+j] for j in range(1, Bx%FPF+1) ] )
+		input = ", ".join( [ closure.registers[A+j] for j in range(1, Bx%FPF+1) ] )
 		# print(Bx%FPF+1)
 		# print(A,Bx)
-		print( "\t"*indent + f"{registers[A]} = "+"{"+input+"}")
-		read_instr(instructions, i+1, indent, was_self, notagain)
+		print( "\t"*indent + f"{closure.registers[A]} = "+"{"+input+"}")
+		read_instr(closure, i+1, indent, was_self, notagain)
 	
+	###########################################################
+	# 14  Closures and Closing
+	###########################################################
 	
+	elif ins[0] == "closure":
+		#A Bx	 R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))
+		A, Bx = ins[1:]
+		
+		print( )
+		print( "\t"*indent + f"function {closure.registers[A]}()")
+		read_instr(closures[Bx+1], 0, indent+1, )
+		print( "\t"*indent + f"end")
+		read_instr(closure, i+1, indent, was_self, notagain)
+		
 	else:
 		print("\t"*indent + "NOT IMPLEMENTED "+ins[0])
 	
 
 def find_all(a_str, sub):
-    start = 0
-    while True:
-        start = a_str.find(sub, start)
-        if start == -1: return
-        yield start
-        start += len(sub)
+	start = 0
+	while True:
+		start = a_str.find(sub, start)
+		if start == -1: return
+		yield start
+		start += len(sub)
 		
 file = "compiled2.asm"
 file = "jgb.lua"
@@ -382,24 +392,29 @@ for i, (start, end) in enumerate(functions):
 print(functions)
 start, end = functions[0]
 
+globals = {}
 start1, end1 = functions[1]
 start2, end2 = functions[-1]
-funcs = [ text[start:start1]+text[end2:end], ]
-for start, end in functions[1:]:
-	funcs.append( text[start:end] )
-for func in funcs:
-	for line in func.splitlines():
+texts = [text[start:start1]+text[end2:end], ] + [ text[start:end] for start, end in functions[1:]]
+
+class LuaClosure():
+	def __init__(self, locals, constants, instructions, registers):
+		self.locals = locals
+		self.constants = constants
+		self.instructions = instructions
+		self.registers = registers
+		
+def text_to_closure(text):
+	locals = []
+	constants = []
+	instructions = []
+	registers = []
+	for line in text.splitlines():
 		if line.startswith(".function"):
 			# vararg function flag, true if non-zero
 			# maximum stack size (number of registers used)
 			num_upvalues, num_params, vararg_flag, max_stack_size = [int(j) for j in line[10:].split()]
 			
-			locals = []
-			constants = []
-			instructions = []
-			registers = []
-			globals = {}
-		
 		if line.startswith(".local"):
 			locals.append( clear_var(line[8:]) )
 			
@@ -413,14 +428,8 @@ for func in funcs:
 	registers = [f"reg{i}" for i in range(max_stack_size)]
 	registers[0:len(locals)] = locals
 	upvalues = [f"upval{i}" for i in range(num_upvalues)]
-
-	moved = list(registers)
 	print(num_upvalues, num_params, vararg_flag, max_stack_size)
-	# print(locals)
-	# print(constants)
-	# print(instructions)
-	if instructions:
-		read_instr(instructions, 0)
-	instructions = []
-	# print(registers)
-	# print(upvalues)
+	return LuaClosure(locals, constants, instructions, registers)
+
+closures = [text_to_closure(text) for text in texts]
+read_instr(closures[0], 0)
