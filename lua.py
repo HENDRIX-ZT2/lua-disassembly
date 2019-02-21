@@ -86,13 +86,13 @@ def read_instr(closure, i, indent=0, was_self=False, notagain=None):
 	elif ins[0] == "getupval":
 		#A B   R(A) := UpValue[B]
 		A, B = ins[1:]
-		closure.registers[A] = upvalues[B]
+		closure.registers[A] = closure.upvalues[B]
 		read_instr(closure, i+1, indent, was_self, notagain)
 		
 	elif ins[0] == "setupval":
 		#A B UpValue[B] := R(A)
 		A,B = ins[1:]
-		upvalues[B] = closure.registers[A]
+		closure.upvalues[B] = closure.registers[A]
 		# print("setupval",upvalues[B])
 		read_instr(closure, i+1, indent, was_self, notagain)
 		
@@ -400,11 +400,12 @@ start2, end2 = functions[-1]
 texts = [text[start:start1]+text[end2:end], ] + [ text[start:end] for start, end in functions[1:]]
 
 class LuaClosure():
-	def __init__(self, locals, constants, instructions, registers):
+	def __init__(self, locals, constants, instructions, registers, upvalues):
 		self.locals = locals
 		self.constants = constants
 		self.instructions = instructions
 		self.registers = registers
+		self.upvalues = upvalues
 		
 def text_to_closure(text):
 	locals = []
@@ -427,11 +428,14 @@ def text_to_closure(text):
 			instructions.append( clear_ins(line)  )
 			
 		# if line.startswith("; end of function"):
-	registers = [f"reg{i}" for i in range(max_stack_size)]
+	# registers = [f"reg{i}" for i in range(max_stack_size)]
+	registers = [f"reg{i}" for i in range(255)]
+	constants.extend([f"con{i}" for i in range(255)])
 	registers[0:len(locals)] = locals
-	upvalues = [f"upval{i}" for i in range(num_upvalues)]
+	# upvalues = [f"upval{i}" for i in range(num_upvalues)]
+	upvalues = [f"upval{i}" for i in range(255)]
 	print(num_upvalues, num_params, vararg_flag, max_stack_size)
-	return LuaClosure(locals, constants, instructions, registers)
+	return LuaClosure(locals, constants, instructions, registers, upvalues)
 
 closures = [text_to_closure(text) for text in texts]
 read_instr(closures[0], 0)
